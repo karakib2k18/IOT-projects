@@ -1,13 +1,13 @@
-import os
 import pandas as pd
+from pathlib import Path
 
-def ensure_dir(path: str) -> None:
-    os.makedirs(path, exist_ok=True)
+def _ensure_dir(p: str | Path):
+    Path(p).parent.mkdir(parents=True, exist_ok=True)
 
-def save_logs(logs: list[dict], path: str) -> None:
-    ensure_dir(os.path.dirname(path))
-    pd.DataFrame(logs).to_csv(path, index=False)
+def save_logs(rows, path: str):
+    _ensure_dir(path)
+    pd.DataFrame(rows).to_csv(path, index=False)
 
-def save_summary(summary: dict, path: str) -> None:
-    ensure_dir(os.path.dirname(path))
+def save_summary(summary: dict, path: str):
+    _ensure_dir(path)
     pd.DataFrame([summary]).to_csv(path, index=False)

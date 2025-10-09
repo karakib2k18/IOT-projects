@@ -1,13 +1,11 @@
-import time
 from typing import List, Tuple
 
-def generate_messages(cfg: dict, start: float | None = None) -> List[Tuple[str, str, float, float]]:
+def generate_messages(cfg: dict) -> List[Tuple[str, str, int, float]]:
     """
-    Create messages: (src, dst, size_kB, t_gen)
-    devA -> devB periodic traffic
+    Produce (src, dst, size_kB, tgen) for a single flow devA->devB.
+    Pulls values from cfg['traffic'].
     """
-    t0 = time.time() if start is None else start
-    msgs = []
-    for i in range(cfg["messages"]):
-        msgs.append(("devA", "devB", cfg["message_size_kB"], t0 + i * cfg["period_s"]))
-    return msgs
+    tcfg = cfg.get("traffic", {})
+    n = int(tcfg.get("num_messages", 300))
+    size_kB = int(tcfg.get("size_kB", 1))
+    return [("devA", "devB", size_kB, float(i)) for i in range(n)]

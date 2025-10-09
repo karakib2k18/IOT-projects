@@ -4,7 +4,6 @@ class EveBER:
     """
     Eavesdropper estimates Bit Error Rate (BER) when key/KIM unknown.
     For M-ary symbols, naive demap ≈ 1 - 1/M. Multipath/pilot issues can worsen.
-    You can refine by adding SNR-based models if desired.
     """
     def __init__(self, snr_db=18, antennas=1):
         self.snr_db = snr_db
@@ -22,7 +21,7 @@ class EveBER:
         return ber
 
     def ber_with_key(self):
-        # Legit peer with key can demap exactly; BER ~ 0 if no channel noise modeled in symbols
+        # Legit peer with key can demap exactly; ~0 in this abstraction
         return 0.0
 
     def success_prob_from_ber(self, ber: float):
@@ -33,7 +32,6 @@ class EveBER:
         """
         Activity detection (energy + structure).
         Key-dither increases spectral ambiguity, reducing detectability.
-        We model detectability ~ base - f(dither) (clamped to [0,1]).
         """
         penalty = min(0.2, 0.15 * dither_strength)  # modest reduction
         p_det = max(0.0, min(1.0, base_threshold - penalty))

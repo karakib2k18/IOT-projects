@@ -1,27 +1,26 @@
-# sim/attacker.py
 import random
-from typing import Iterable, Optional, Tuple, List, Dict, Any
+from typing import Iterable, Optional, List, Dict, Any
 
 class Attacker:
     """
-    Passive eavesdropper supporting:
-      - placement: "gateway", "global", or list of edge tuples (('devA','gw'), ...)
-      - success_prob: float (or dict for per-link overrides)
-      - rng_seed for reproducibility
-    It also supports lightweight logging of observations.
+    Passive eavesdropper observing certain paths/links.
+    placement:
+      - "gateway": observes any path that includes node "gw"
+      - "global" : observes all paths
+      - list of edges: e.g., [("devA","gw"), ("gw","devB")]
+    success_prob:
+      - float in [0,1], or dict for per-edge overrides; default applied otherwise
     """
-
     def __init__(self, placement="gateway", success_prob=1.0, rng_seed: Optional[int]=None, logger=None):
         self.placement = placement
         self.rng = random.Random(rng_seed)
-        # store per-link/per-node probabilities optionally
+        self.logger = logger
         if isinstance(success_prob, dict):
             self.success_prob_map = success_prob
             self.default_p = 0.0
         else:
             self.success_prob_map = {}
             self.default_p = float(success_prob)
-        self.logger = logger  # optional callable to record events
 
     def _observes_path(self, path: Iterable[str]) -> bool:
         if self.placement == "global":
@@ -37,39 +36,25 @@ class Attacker:
         return False
 
     def _success_p(self, path: Iterable[str]) -> float:
-        probs: List[float] = []
-        # check per-edge overrides if user provided a dict
-        pairs = list(zip(path[:-1], path[1:]))
-        for edge in pairs:
-            if edge in self.success_prob_map:
-                probs.append(self.success_prob_map[edge])
-            elif (edge[1], edge[0]) in self.success_prob_map:
-                probs.append(self.success_prob_map[(edge[1], edge[0])])
-        # node override (gateway)
+        # per-edge overrides, else default
+        probs = [self.default_p]
+        if isinstance(self.placement, (list, tuple, set)):
+            for edge in zip(path[:-1], path[1:]):
+                if edge in self.success_prob_map:
+                    probs.append(self.success_prob_map[edge])
+                elif (edge[1], edge[0]) in self.success_prob_map:
+                    probs.append(self.success_prob_map[(edge[1], edge[0])])
         if "gw" in path and "gw" in self.success_prob_map:
             probs.append(self.success_prob_map["gw"])
-        probs.append(self.default_p)
-        return max(probs) if probs else 0.0
+        return max(probs)
 
     def try_intercept(self, path: Iterable[str]) -> bool:
-        """
-        Return True if attacker observes and succeeds in intercepting this path.
-        Also logs observation if logger is provided: logger(dict).
-        """
         observed = self._observes_path(path)
         p = self._success_p(path) if observed else 0.0
         success = self.rng.random() < p if observed else False
-
-        if self.logger is not None:
-            info: Dict[str, Any] = {
-                "path": "->".join(path),
-                "observed": observed,
-                "success_prob": p,
-                "intercepted": success
-            }
+        if self.logger:
             try:
-                self.logger(info)
+                self.logger({"path": "->".join(path), "observed": observed, "p": p, "intercepted": success})
             except Exception:
-                pass  # don't break simulation for logging problems
-
+                pass
         return success

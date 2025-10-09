@@ -30,21 +30,20 @@ def run(cfg: dict):
     total_energy = 0.0
 
     for (src, dst, size_kB, tgen) in msgs:
-        # Force routing via gateway (max exposure)
+        # Force routing via gateway (vulnerable exposure)
         path = nx.shortest_path(G, src, "gw") + nx.shortest_path(G, "gw", dst)[1:]
 
-        # link latency + simple energy model
+        # link latency & energy
         hop_latency = 0
         energy = 0.0
         for u, v in zip(path[:-1], path[1:]):
             hop_latency += G[u][v]["latency"]
-            energy += cfg["tx_cost_mJ"]
+            energy += float(cfg.get("tx_cost_mJ", 0.02))
 
-        # no security overheads in System 1
+        # no security overheads
         hop_latency += security_overhead_ms()
-        energy += cfg["cpu_cost_mJ"] * 0
 
-        # eavesdropping decision (attacker)
+        # eavesdropping
         was_intercepted = att.try_intercept(path) if is_sniffable() else False
         if was_intercepted:
             caught += 1
@@ -54,10 +53,8 @@ def run(cfg: dict):
         total_energy += energy
 
         logs.append({
-            "src": src, "dst": dst,
-            "path": "->".join(path),
-            "latency_ms": hop_latency,
-            "energy_mJ": energy,
+            "src": src, "dst": dst, "path": "->".join(path),
+            "latency_ms": hop_latency, "energy_mJ": energy,
             "intercepted": was_intercepted
         })
 

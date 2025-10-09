@@ -1,6 +1,6 @@
 import numpy as np
 from keygen import GatewayKeygen
-from channel import tdd_channel_pair, add_multipath_signature, pilot_contaminate
+from channel import tdd_channel_pair, pilot_contaminate
 from kim import KIMMapper
 from auth import make_token, verify_token, p2p_handshake_messages
 from ess_features import FeatureDB
@@ -11,7 +11,7 @@ class SecureStack:
     - Gateway-assisted keygen (TDD reciprocity)
     - Peer authentication (HMAC token + 2-step nonce handshake)
     - Key-Integrated Modulation (KIM + key-driven dither)
-    - Optional multipath/pilot contamination stress
+    - Optional multipath/pilot contamination stress (affects Eve model)
     Lightweight overheads are accounted for in latency/energy.
     """
     def __init__(self, cfg):
@@ -28,7 +28,6 @@ class SecureStack:
         self.energy = s2.get("energy", {"handshake_uj":50, "kim_map_uj":0.02, "tx_bit_nj":1.0, "pkt_bits":1024})
 
         self.kg = GatewayKeygen(bits=self.key_bits)
-        # ESS / gateway intelligence
         ess_cfg = cfg.get("ess", {})
         self.ess = FeatureDB(
             rssi_window=ess_cfg.get("rssi_window", 50),
@@ -37,6 +36,7 @@ class SecureStack:
         )
 
     def derive_key(self, seed=0):
+        from channel import tdd_channel_pair
         ed_csi, gw_csi = tdd_channel_pair(n=self.csi_len, noise=self.csi_noise, seed=seed)
         if self.pilot_contam > 0:
             ed_csi, gw_csi = pilot_contaminate(ed_csi, gw_csi, strength=self.pilot_contam, seed=seed+7)
@@ -72,9 +72,6 @@ class SecureStack:
             rng = np.random.default_rng(seed)
             dither = rng.integers(0, max(1, int(self.dither_strength*self.M)), size=tx_perm.size)
             tx_perm = (tx_perm + dither) % self.M
-        # optional multipath distortion (adversarial environment)
-        if self.multipath_strength > 0:
-            tx_perm = (tx_perm + int(self.multipath_strength * 2)) % self.M
         return tx_perm, mapper
 
     def demap_payload_legit(self, mapper, rx_syms: np.ndarray):

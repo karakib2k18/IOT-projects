@@ -16,4 +16,4 @@ def test_eavesdrop_detectability_low():
     det = float(s2.get('eav_detect_rate', [100])[0])
     assert det < 20.0, f"Eve detectability too high ({det}%)"
 
-print('✅ test_secure.py loaded — ready to run after both systems executed')
+print('✅ test_secure.py loaded — run after both systems executed')
