@@ -1,0 +1,84 @@
+messages: 300
+message_size_kB: 2.0
+period_s: 0.01
+allow_direct_link: false        # force traffic via gateway to maximize exposure
+latency_dev_gw_ms: 10
+latency_gw_dev_ms: 10
+eavesdrop_success: 1.0          # attacker always succeeds in System 1
+tx_cost_mJ: 0.02
+cpu_cost_mJ: 0.01
+attacker:
+  placement: "gateway"          # "gateway" or "global" or [["devA","gw"],["gw","devB"]]
+  success_prob: 0.7            # float in [0,1] or a dict for per-link: {"gw":1.0}
+  rng_seed: 42
+
+# ---------- System 2 (secure) ----------
+system2:
+  # handshake & security overheads (lightweight)
+  auth_overhead_ms: 3
+  kim_overhead_ms: 5
+  # KIM constellation size (higher → stronger security, slightly more CPU)
+  M: 16
+
+  # Channel reciprocity keygen (TDD)
+  key_bits: 128
+  csi_len: 256
+  csi_noise: 0.05
+
+  # Physical-layer effects (optional stress)
+  multipath_strength: 0.3     # 0..1  (0 = off)
+  pilot_contamination: 0.0    # 0..1  (0 = off)
+
+  # Simple energy model (µJ per component)
+  energy:
+    handshake_uj: 50        # one-time P2P handshake/auth
+    kim_map_uj: 0.02        # per-symbol mapping cost
+    tx_bit_nj: 1.0          # per-bit CPU cycles → nJ
+    pkt_bits: 1024
+
+attacker2:
+  # Eve evaluates BER rather than a fixed success prob
+  snr_db: 18
+  antennas: 1
+  rng_seed: 42
+
+# ---- ESS / Gateway Intelligence (feature DB) ----
+ess:
+  rssi_window: 50          # sliding window for mean/variance
+  rssi_z_thresh: 3.0       # anomaly threshold (z-score)
+  csi_agree_thresh: 0.75   # ED/GW CSI agreement threshold to accept session
+
+# ---- Key-Integrated Modulation controls ----
+system2:
+  dither_strength: 0.3     # key-driven symbol dither (0..1)
+
+# ---- Eve detectability model ----
+attacker2:
+  detect_base_threshold: 0.25  # higher = harder to detect activity
+  # snr_db, antennas, rng_seed already defined earlier
+
+# ---- Optional jammer (active attacker) ----
+jammer:
+  enabled: false
+  duty_cycle: 0.1          # fraction of time jamming
+  snr_penalty_db: 6.0      # how much Eve SNR is reduced when jammed
+
+# ---- ESS / Gateway Intelligence (feature DB) ----
+ess:
+  rssi_window: 50
+  rssi_z_thresh: 3.0
+  csi_agree_thresh: 0.75
+
+# ---- Key-Integrated Modulation controls ----
+system2:
+  dither_strength: 0.3
+
+# ---- Eve detectability model ----
+attacker2:
+  detect_base_threshold: 0.25
+
+# ---- Optional jammer (active attacker) ----
+jammer:
+  enabled: false
+  duty_cycle: 0.1
+  snr_penalty_db: 6.0

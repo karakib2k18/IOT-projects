@@ -1,0 +1,2 @@
+scenario,confidentiality_pct,avg_latency_ms,energy_mJ_total,total_msgs,intercepted,eav_detect_rate
+System2_Secure,93.67,25.01,12.36,300,19,21.67
