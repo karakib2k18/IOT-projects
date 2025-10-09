@@ -1,4 +1,4 @@
-# IoT_Vulnerable_S1 → System-1 (Vulnerable) + System-2 (Secure)
+# A2J-Edge — P2P Authentication + Physical‑Layer Security (PLS) + Advanced Key Generation at the Gateway
 
 Two comparable IoT simulations:
 
