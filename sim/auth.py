@@ -1,19 +1,23 @@
-import hmac, hashlib, os
+import os, hmac, hashlib
 
-def mac_k(key: bytes, msg: bytes, tag_len=8) -> bytes:
-    return hmac.new(key, msg, hashlib.sha256).digest()[:tag_len]
-
-def make_token(key: bytes, ed_id: str, pd_id: str, epoch: int, params: bytes=b'') -> bytes:
-    msg = ed_id.encode() + b'|' + pd_id.encode() + b'|' + str(epoch).encode() + b'|' + params
-    return mac_k(key, msg)
+def make_token(key: bytes, ed_id: str, pd_id: str, epoch: int) -> bytes:
+    """
+    >>> P2P auth token (bind IDs + epoch to the session key)
+    """
+    msg = f"{ed_id}|{pd_id}|{epoch}".encode()
+    return hmac.new(key, msg, hashlib.sha256).digest()
 
 def verify_token(key: bytes, token: bytes, ed_id: str, pd_id: str, epoch: int) -> bool:
-    return make_token(key, ed_id, pd_id, epoch) == token
+    exp = make_token(key, ed_id, pd_id, epoch)
+    return hmac.compare_digest(exp, token)
 
 def p2p_handshake_messages(key: bytes):
-    # Minimal 2-message nonce exchange (lightweight)
-    n1 = os.urandom(4)
-    m1 = n1 + mac_k(key, n1)
-    n2 = os.urandom(4)
-    m2 = n2 + mac_k(key, n1 + n2)
-    return m1, m2
+    """
+    >>> P2P 2-step nonce handshake (challenge/response)
+    """
+    n1 = os.urandom(12)
+    tag1 = hmac.new(key, n1, hashlib.sha256).digest()[:8]
+    n2 = os.urandom(12)
+    tag2 = hmac.new(key, n2 + tag1, hashlib.sha256).digest()[:8]
+    # return the messages that would go on air
+    return (n1 + tag1), (n2 + tag2)

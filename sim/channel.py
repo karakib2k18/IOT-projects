@@ -1,21 +1,23 @@
 import numpy as np
 
-def tdd_channel_pair(n=256, noise=0.05, seed=0):
+def tdd_channel_pair(n: int = 256, noise: float = 0.05, seed: int = 0):
     """
-    Generate correlated channel observations (ED and GW) in TDD (reciprocal).
+    >>> TDD reciprocity model:
+    Produce two highly-correlated CSI sequences for ED<->GW (same fading block)
     """
     rng = np.random.default_rng(seed)
-    base = rng.normal(0, 1, n)
-    ed_obs = base + rng.normal(0, noise, n)
-    gw_obs = base + rng.normal(0, noise, n)
-    return ed_obs, gw_obs
+    base = rng.normal(size=n) * 0.8 + rng.normal(size=n) * 0.2
+    ed = base + noise * rng.normal(size=n)
+    gw = base + noise * rng.normal(size=n)
+    # normalize
+    ed = (ed - ed.mean()) / (ed.std() + 1e-9)
+    gw = (gw - gw.mean()) / (gw.std() + 1e-9)
+    return ed, gw
 
-def add_multipath_signature(waveform: np.ndarray, strength=0.3, seed=1):
+def pilot_contaminate(ed: np.ndarray, gw: np.ndarray, strength: float = 0.1, seed: int = 1):
+    """
+    >>> Pilot contamination stress: add correlated interference -> lowers CSI agreement
+    """
     rng = np.random.default_rng(seed)
-    signature = rng.normal(0, 1, size=waveform.size)
-    return waveform + strength * signature
-
-def pilot_contaminate(ed_obs, gw_obs, strength=0.1, seed=7):
-    rng = np.random.default_rng(seed)
-    contam = rng.normal(0, strength, size=ed_obs.size)
-    return ed_obs + contam, gw_obs + contam
+    contam = strength * rng.normal(size=len(ed))
+    return ed + contam, gw + contam

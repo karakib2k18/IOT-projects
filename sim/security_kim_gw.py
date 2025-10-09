@@ -1,8 +1,8 @@
 import numpy as np
-from keygen import GatewayKeygen
+from keygen import GatewayKeygen               # >>> Advanced key generation at gateway
 from channel import tdd_channel_pair, pilot_contaminate
-from kim import KIMMapper
-from auth import make_token, verify_token, p2p_handshake_messages
+from kim import KIMMapper                      # >>> Physical-Layer Security (KIM)
+from auth import make_token, verify_token, p2p_handshake_messages  # >>> P2P auth
 from ess_features import FeatureDB
 
 class SecureStack:
@@ -10,11 +10,10 @@ class SecureStack:
     System-2 secure stack:
     - Gateway-assisted keygen (TDD reciprocity)
     - Peer authentication (HMAC token + 2-step nonce handshake)
-    - Key-Integrated Modulation (KIM + key-driven dither)
+    - Key-Integrated Modulation (KIM + optional key-driven dither)
     - Optional multipath/pilot contamination stress (affects Eve model)
-    Lightweight overheads are accounted for in latency/energy.
     """
-    def __init__(self, cfg):
+    def __init__(self, cfg: dict):
         s2 = cfg["system2"]
         self.M = int(s2.get("M", 16))
         self.key_bits = int(s2.get("key_bits", 128))
@@ -25,7 +24,10 @@ class SecureStack:
         self.dither_strength = float(s2.get("dither_strength", 0.0))
         self.auth_overhead_ms = int(s2.get("auth_overhead_ms", 3))
         self.kim_overhead_ms = int(s2.get("kim_overhead_ms", 5))
-        self.energy = s2.get("energy", {"handshake_uj":50, "kim_map_uj":0.02, "tx_bit_nj":1.0, "pkt_bits":1024})
+        self.energy = s2.get(
+            "energy",
+            {"handshake_uj": 50, "kim_map_uj": 0.02, "tx_bit_nj": 1.0, "pkt_bits": 1024},
+        )
 
         self.kg = GatewayKeygen(bits=self.key_bits)
         ess_cfg = cfg.get("ess", {})
@@ -35,58 +37,54 @@ class SecureStack:
             csi_agree_thresh=ess_cfg.get("csi_agree_thresh", 0.75),
         )
 
-    def derive_key(self, seed=0):
-        from channel import tdd_channel_pair
+    def derive_key(self, seed: int = 0) -> bytes:
+        # >>> Advanced Gateway Key-Gen happens here (TDD reciprocity)
         ed_csi, gw_csi = tdd_channel_pair(n=self.csi_len, noise=self.csi_noise, seed=seed)
         if self.pilot_contam > 0:
-            ed_csi, gw_csi = pilot_contaminate(ed_csi, gw_csi, strength=self.pilot_contam, seed=seed+7)
-        K, agree = self.kg.derive_key(ed_csi, gw_csi)
-        # ESS checks
+            ed_csi, gw_csi = pilot_contaminate(ed_csi, gw_csi, strength=self.pilot_contam, seed=seed + 7)
+        key, agree = self.kg.derive_key(ed_csi, gw_csi)
+
+        # ESS checks (channel agreement + RSSI anomaly)
         if not self.ess.csi_agreement_ok(agree):
             raise RuntimeError(f"ESS rejected session: CSI agreement {agree:.2f} < thresh")
-        # simulate RSSI learning (use CSI energy as proxy)
-        rssi_dbm = 10*np.log10(np.mean(gw_csi**2) + 1e-9)
+
+        rssi_dbm = 10 * np.log10(np.mean(gw_csi**2) + 1e-9)
         self.ess.add_rssi(rssi_dbm)
         if self.ess.rssi_anomaly(rssi_dbm):
             raise RuntimeError("ESS RSSI anomaly detected")
-        return K
+        return key
 
-    def authenticate_peers(self, key: bytes, ed_id="devA", pd_id="devB", epoch=1):
+    def authenticate_peers(self, key: bytes, ed_id="devA", pd_id="devB", epoch=1) -> bool:
+        # >>> P2P Authentication happens here (token + nonce handshake)
         token = make_token(key, ed_id, pd_id, epoch)
         m1, m2 = p2p_handshake_messages(key)
-        # minimal verification (simulation)
-        ok = token is not None and len(m1) > 0 and len(m2) > 0
-        return ok
+        return verify_token(key, token, ed_id, pd_id, epoch) and len(m1) > 0 and len(m2) > 0
 
     def map_payload(self, key: bytes, payload_syms: np.ndarray):
         """
         Key-Integrated Modulation:
-        1) Key-indexed permutation (KIM)
-        2) Key-driven dither: add small PRNG offset per symbol -> spectral camouflage.
+        1) Key-indexed permutation (KIM)  [PLS core]
+        2) Optional key-driven dither (small PRNG offset) -> spectral camouflage
         """
         mapper = KIMMapper(key, M=self.M)
         tx_perm = mapper.map_syms(payload_syms)
-        # key-driven dither
         if self.dither_strength > 0:
             seed = int.from_bytes(key[:4], 'little', signed=False)
             rng = np.random.default_rng(seed)
-            dither = rng.integers(0, max(1, int(self.dither_strength*self.M)), size=tx_perm.size)
+            dither = rng.integers(0, max(1, int(self.dither_strength * self.M)), size=tx_perm.size)
             tx_perm = (tx_perm + dither) % self.M
         return tx_perm, mapper
 
-    def demap_payload_legit(self, mapper, rx_syms: np.ndarray):
+    def demap_payload_legit(self, mapper: KIMMapper, rx_syms: np.ndarray) -> np.ndarray:
         return mapper.demap_syms(rx_syms)
 
-    def overheads(self, first_packet=False):
+    def overheads(self, first_packet: bool = False):
         lat_ms = self.kim_overhead_ms
-        energy_mJ = 0.0
-        # convert µJ / nJ to mJ
-        energy_mJ += (self.energy.get("kim_map_uj",0.02) / 1000.0)
+        energy_mJ = (self.energy.get("kim_map_uj", 0.02) / 1000.0)  # µJ -> mJ
         if first_packet:
             lat_ms += self.auth_overhead_ms
-            energy_mJ += (self.energy.get("handshake_uj",50) / 1000.0)
-        # CPU per-packet bit processing (very rough)
-        pkt_bits = self.energy.get("pkt_bits",1024)
-        tx_bit_nj = self.energy.get("tx_bit_nj",1.0)
-        energy_mJ += (pkt_bits * tx_bit_nj) / 1e6
+            energy_mJ += (self.energy.get("handshake_uj", 50) / 1000.0)
+        pkt_bits = self.energy.get("pkt_bits", 1024)
+        tx_bit_nj = self.energy.get("tx_bit_nj", 1.0)
+        energy_mJ += (pkt_bits * tx_bit_nj) / 1e6  # nJ -> mJ
         return lat_ms, energy_mJ
