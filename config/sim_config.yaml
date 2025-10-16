@@ -1,5 +1,6 @@
 # ===== Global simulation knobs =====
-tx_cost_mJ: 0.02     # per hop transmit cost added in both systems
+random_seed: 42            # global RNG seed for reproducibility (used by topology/traffic)
+tx_cost_mJ: 0.02           # per-hop transmit cost added in both systems
 
 traffic:
   num_messages: 300
@@ -11,29 +12,40 @@ system1:
 
 attacker:
   placement: "gateway"         # "gateway" | "global" | [["devA","gw"],["gw","devB"]]
-  success_prob: 1.0            # 1.0 = every observed msg is intercepted
+  success_prob: 0.7            # 1.0 = every observed msg is intercepted
   rng_seed: 42
 
 # ===== System-2 (secure) =====
 system2:
-  # Lightweight overheads
+  # Lightweight overheads (ms)
   auth_overhead_ms: 3
   kim_overhead_ms: 5
 
   # KIM constellation size
   M: 16
 
-  # Channel reciprocity keygen (TDD)
+  # Channel reciprocity keygen (TDD) -- gateway-assisted
   key_bits: 128
   csi_len: 256
   csi_noise: 0.05
+  keygen:
+    rekey_interval_pkts: 100   # rekey after this many packets (soft policy)
+    privacy_amp: "blake2s"     # privacy amplification hash used in key derivation
+    recon_rounds: 2            # number of reconciliation rounds (simulated effect)
+    seed: 101                  # seed for reproducible keygen RNGs
 
-  # Physical-layer stress
+  # Physical-layer stress (affects Eve model & CSI)
   multipath_strength: 0.3        # 0..1 (0 disables)
   pilot_contamination: 0.0       # 0..1 (0 disables)
 
   # Key-integrated modulation dither (camouflage)
-  dither_strength: 0.50      # was 0.30 — stronger key-driven dither → harder to detect
+  dither_strength: 0.05          # 0..1 — small value adds spectral camouflage, reduces detectability
+  dither:
+    min_strength: 0.01
+    max_strength: 0.25
+
+  # Adaptive rekey trigger (count of tamper/tag failures to force rekey)
+  rekey_thresh: 2
 
   # Very lightweight energy model (mJ, µJ, nJ units converted in code)
   energy:
@@ -42,21 +54,49 @@ system2:
     tx_bit_nj: 1.0
     pkt_bits: 1024
 
-# Gateway Intelligence / ESS
+  # Authentication parameters (P2P)
+  auth:
+    token_algo: "HMAC-SHA256"
+    epoch_len: 3600         # logical epoch length (seconds) for token freshness
+    max_auth_failures: 3
+
+# Gateway Intelligence / ESS (environmental screening)
 ess:
   rssi_window: 50
   rssi_z_thresh: 3.0
   csi_agree_thresh: 0.75
+  anomaly:
+    max_consecutive_fail: 3  # if many CSI-agreement fails in a row, escalate to rekey/lock
+    alert_cooldown_s: 30     # cooldown between ESS alerts (simulated)
 
 # Eavesdropper (System-2) — BER & detectability model
 attacker2:
   snr_db: 18
   antennas: 1
   rng_seed: 42
-  detect_base_threshold: 0.20 # was 0.25 — lower base → reduces Eve's detect probability
+  detect_base_threshold: 0.30 # was 0.25 — higher base threshold makes detector stricter (fewer false positives)
 
 # Optional jammer (active attacker)
 jammer:
   enabled: false
   duty_cycle: 0.1
   snr_penalty_db: 6.0
+
+# Policy & adaptation hooks (read by SecureStack/hub)
+policy:
+  adapt_on_high_risk:
+    p_success_thresh: 0.7    # if Eve success prob exceeds this, trigger adaptation
+    action:
+      - "increase_dither"    # small step will be applied by SecureStack
+      - "notify_ess"
+  adapt_on_detectable:
+    p_detect_thresh: 0.7     # if detect prob exceeds this, trigger adaptation
+    action:
+      - "reduce_activity"    # e.g. postpone non-essential packets / reduce duty-cycle
+      - "notify_gateway"
+
+# Logging / outputs
+outputs:
+  results_dir: "results"
+  logs_file: "logs_secure.csv"
+  summary_file: "summary_secure.csv"
